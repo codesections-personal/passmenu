@@ -16,6 +16,12 @@ fn main() {
         .after_help("Note: a line range can be either a single line number or a range of line numbers (e.g., `2-5`).  In both cases, line numbers are 1-indexed; if a range is supplied, it is inclusive.")
         .get_matches();
 
+    let (code, _, _) = run_script!("which dmenu").expect("which dmenu");
+    if code != 0 {
+        eprintln!("dmenu not found in $PATH.  Please install dmenu to use passmenu");
+        std::process::exit(1);
+    }
+
     let (_, ip, _) = run_script!("d5").unwrap();
     let name = cli
         .value_of("USER")
@@ -29,7 +35,7 @@ fn main() {
         std::process::exit(1);
     }
     let line_range = cli.value_of("line-range").expect("default");
-    let (start, end) = get_range(line_range);
+    let (start, end) = parse_range(line_range);
     let password = entry.lines().skip(start).take(end - start).join("\n");
     if !cli.is_present("silent") {
         println!("{}", password);
@@ -45,7 +51,7 @@ fn main() {
     }
 }
 
-fn get_range(input: &str) -> (usize, usize) {
+fn parse_range(input: &str) -> (usize, usize) {
     let parse_range = |s: &str| {
         s.parse::<usize>().unwrap_or_else(|_| {
             eprintln!(
@@ -73,16 +79,15 @@ Please specify either a single line or beginning and ending lines separated a hy
 
 fn get_username_from_remote_pw_store(ip: &str) -> String {
     let cmd = format!(
-        r#"ssh-home --ip {} -c 'PASSWORD_STORE_DIR=${{PASSWORD_STORE_DIR:=~/.password-store}}; cd $PASSWORD_STORE_DIR; find -name "*" -print | sed "s/\.gpg//g" | sed "s_\./__g"' "#,
+        r#"ssh-home --ip {} -c 'PASSWORD_STORE_DIR=${{PASSWORD_STORE_DIR:=~/.password-store}}; cd $PASSWORD_STORE_DIR; find -name "*" -print' "#,
         ip
     );
-
-    let (code, names, err) = run_script!(cmd).expect("find_cmd");
+    let (code, raw_names, err) = run_script!(cmd).expect("find_cmd");
     if code != 0 {
         eprintln!("{}", err);
         std::process::exit(1);
-    }
-
+    };
+    let names = raw_names.replace(".gpg", "").replace("./", "");
     let names: String = names
         .lines()
         .zip(names.lines().skip(1).cycle())
