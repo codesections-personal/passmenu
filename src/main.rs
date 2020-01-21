@@ -1,15 +1,18 @@
-use clap::{crate_name, crate_version, App};
+use clap::{crate_name, crate_version, App, Arg};
+use copypasta::x11_clipboard::{Primary, X11ClipboardContext};
+use copypasta::ClipboardContext;
+use copypasta::ClipboardProvider;
 use itertools::Itertools;
 use run_script::run_script;
 
 fn main() {
     let cli = App::new(crate_name!())
         .version(crate_version!())
-        .about("Interactively select a username (via dmenu) and copy the corresponding password (via xclip).")
+        .about("Interactively select a username (via dmenu) and copy the corresponding password to both primary and selection.  The copied password will be cleared in 45 seconds.")
         .arg("[USER] 'A username to use (instead of prompting via dmenu)'")
         .arg("-s --silent 'Suppresses printing the password to stdout'")
         .arg("-x --no-clip 'Suppresses copying the password to the clipboard'")
-        .arg("-l --line-range [LINES] 'Line(s) to print or copy'")
+        .arg(Arg::from("-l --line-range [LINES] 'Line(s) to print or copy'").default_value("1"))
         .after_help("Note: a line range can be either a single line number or a range of line numbers (e.g., `2-5`).  In both cases, line numbers are 1-indexed; if a range is supplied, it is inclusive.")
         .get_matches();
 
@@ -19,31 +22,26 @@ fn main() {
         .map(String::from)
         .unwrap_or_else(|| get_username_from_remote_pw_store(&ip));
 
-    let (code, mut entry, err) =
+    let (code, entry, err) =
         run_script!(format!(r#"ssh-home --ip {} -c 'pass "{}"'"#, ip, name)).expect("pass_cmd");
     if code != 0 {
         eprintln!("{}", err);
         std::process::exit(1);
     }
-
-    if let Some(value) = cli.value_of("line-range") {
-        let (start, end) = get_range(value);
-        entry = entry.lines().skip(start).take(end - start).join("\n");
-    }
-
+    let line_range = cli.value_of("line-range").expect("default");
+    let (start, end) = get_range(line_range);
+    let password = entry.lines().skip(start).take(end - start).join("\n");
     if !cli.is_present("silent") {
-        println!("{}", entry);
+        println!("{}", password);
     }
     if !cli.is_present("no-clip") {
-        run_script!(format!(
-            r#"
-echo -n "{pw}" | xclip -selection primary &
-echo -n "{pw}" | xclip -selection clipboard &
-echo ""
-"#,
-            pw = entry.lines().nth(0).unwrap_or("").to_string()
-        ))
-        .expect("xclip_cmd");
+        let (mut primary, mut clipboard) = (
+            X11ClipboardContext::<Primary>::new().unwrap(),
+            ClipboardContext::new().unwrap(),
+        );
+        primary.set_contents(password.clone()).unwrap();
+        clipboard.set_contents(password).unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(45));
     }
 }
 

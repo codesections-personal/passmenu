@@ -10,3 +10,4 @@ edition = "2018"
 clap = { git = "https://github.com/clap-rs/clap" }
 run_script = "0.3.2"
 itertools = "0.8.2"
+copypasta = "0.6.2"
