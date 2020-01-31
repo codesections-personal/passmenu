@@ -11,3 +11,9 @@ clap = { git = "https://github.com/clap-rs/clap" }
 run_script = "0.3.2"
 itertools = "0.8.2"
 copypasta = "0.6.2"
+utils = { path = "../utils"}
+ssh-home= {path = "../ssh-home"}
+d5_cli = {path = "../d5_cli"}
+
+[profile.release]
+lto = true
